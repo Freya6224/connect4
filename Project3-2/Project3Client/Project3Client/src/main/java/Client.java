@@ -69,6 +69,6 @@ public class Client extends Thread {
 	public void disconnect() {
 		try {
 			socket.close();
-		} catch (IOException e) {}
+		} catch (Exception e) {}
 	}
 }

@@ -42,7 +42,7 @@ public class GuiClient extends Application {
 	private int playerId;
 	private Button[][] buttons = new Button[6][7];
 
-	private Scene loginScene, gameScene;
+	private Scene loginScene, gameScene, resultScene;
 	private TextField usernameField, serverIpField, portField, chatInput;
 	private TextArea chatArea;
 	private Label statusLabel;
@@ -67,26 +67,21 @@ public class GuiClient extends Application {
 
 		usernameField = new TextField();
 		usernameField.setPromptText("Username");
-//		serverIpField = new TextField("127.0.0.1");
-//		portField = new TextField("5555");
 		Button loginButton = new Button("Login");
 		Label loginStatus = new Label();
 
 		loginButton.setOnAction(e -> {
-
 			username = usernameField.getText().trim();
 			try {
 				client = new Client(this::handleMessage);
-				client.connect(serverIpField.getText(), Integer.parseInt(portField.getText()), username);
+				client.connect("127.0.0.1", 5555, username);
 				client.start();
 				loginStatus.setText("Connecting...");
-
 			} catch (Exception ex) {
 				loginStatus.setText("Failed to connect: " + ex.getMessage());
 			}
-			setupGameScene();
-			primaryStage.setScene(gameScene);
 		});
+
 
 		layout.getChildren().addAll(
 				new Label("Connect 4 Login"), usernameField, loginButton, loginStatus
@@ -135,8 +130,7 @@ public class GuiClient extends Application {
 		if (msg instanceof Message message) {
 			switch (message.getType()) {
 				case LOGIN_SUCCESS -> Platform.runLater(() -> {
-					setupGameScene();
-					primaryStage.setScene(gameScene);
+					statusLabel.setText("Login successful. Waiting for opponent...");
 				});
 				case CHAT -> Platform.runLater(() ->
 						chatArea.appendText(message.getContent().toString() + "\n")
@@ -146,7 +140,12 @@ public class GuiClient extends Application {
 					int row = move[0], col = move[1], player = move[2];
 					buttons[row][col].setStyle("-fx-background-color: " + (player == 1 ? "red" : "yellow"));
 				});
-				case GAME_START -> Platform.runLater(() -> statusLabel.setText(message.getContent().toString()));
+				case GAME_START -> Platform.runLater(() -> {
+					setupGameScene();
+					primaryStage.setScene(gameScene);
+					primaryStage.setTitle("Connect 4 Game");
+					statusLabel.setText(message.getContent().toString());
+				});
 				case GAME_END -> Platform.runLater(() -> statusLabel.setText(message.getContent().toString()));
 				case LOGIN_FAIL, ERROR -> Platform.runLater(() -> {
 					Alert alert = new Alert(Alert.AlertType.ERROR, message.getContent().toString());

@@ -24,17 +24,20 @@ public class GuiServer extends Application {
 		HBox lists = new HBox(listUsers, listItems);
 
 		serverConnection = new Server(data -> Platform.runLater(() -> {
+			String user = String.valueOf(data.getContent());
 			switch (data.getType()) {
 				case CHAT, MOVE, GAME_START, GAME_END, LOGIN_FAIL, LOGIN_SUCCESS, ERROR:
 					listItems.getItems().add(data.getContent().toString());
 					break;
 				case NEWUSER:
-					listUsers.getItems().add(String.valueOf(data.getRecipient()));
-					listItems.getItems().add("User " + data.getRecipient() + " has joined!");
+
+					listUsers.getItems().add(String.valueOf(data.getRecipient()+1));
+					listItems.getItems().add(user + " joined");
+
 					break;
 				case DISCONNECT:
 					listUsers.getItems().remove(String.valueOf(data.getRecipient()));
-					listItems.getItems().add("User " + data.getRecipient() + " has disconnected!");
+					listItems.getItems().add(user + " has disconnected!\n");
 					break;
 			}
 		}));

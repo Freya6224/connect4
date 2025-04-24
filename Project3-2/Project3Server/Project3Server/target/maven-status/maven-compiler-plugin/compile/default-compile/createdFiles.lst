@@ -1,3 +1,4 @@
+Server$GameSession.class
 GuiServer.class
 MessageType.class
 Server$ClientThread.class

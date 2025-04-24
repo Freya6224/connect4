@@ -5,89 +5,158 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.function.Consumer;
+import java.util.*;
 
 import javafx.application.Platform;
 import javafx.scene.control.ListView;
 
 public class Server {
-	int count = 1;
-	ArrayList<ClientThread> clients = new ArrayList<>();
-	TheServer server;
-	private Consumer<Message> callback;
+	private final Map<String, ClientThread> clients = new HashMap<>();
+	private final Consumer<Message> callback;
+	private final Queue<ClientThread> waitingClients = new LinkedList<>();
+	private final List<GameSession> activeGames = new ArrayList<>();
 
-	public Server(Consumer<Message> call) {
-		this.callback = call;
-		this.server = new TheServer();
-		this.server.start();
+	private int count = 0;
+
+	public Server(Consumer<Message> callback) {
+		this.callback = callback;
+		new TheServer().start();
 	}
 
-	public class TheServer extends Thread {
+	private class TheServer extends Thread {
 		public void run() {
 			try (ServerSocket serverSocket = new ServerSocket(5555)) {
-				System.out.println("Server is waiting for a client!");
+				System.out.println("Server started on port 5555");
 
 				while (true) {
 					Socket socket = serverSocket.accept();
-					ClientThread client = new ClientThread(socket, count);
-					callback.accept(new Message(MessageType.NEWUSER, "User " + count + " has joined!", count));
-					clients.add(client);
-					client.start();
-					count++;
+					new ClientThread(socket).start();
 				}
 			} catch (Exception e) {
-				callback.accept(new Message(MessageType.ERROR, "Server did not launch"));
+				callback.accept(new Message(MessageType.ERROR, "Server failed to start"));
 			}
 		}
 	}
 
-	class ClientThread extends Thread {
-		Socket socket;
-		int clientId;
-		ObjectInputStream in;
-		ObjectOutputStream out;
+	private class ClientThread extends Thread {
+		private final Socket socket;
+		private ObjectInputStream in;
+		private ObjectOutputStream out;
+		private String username;
+		private GameSession gameSession;
 
-		public ClientThread(Socket s, int id) {
-			this.socket = s;
-			this.clientId = id;
+
+		public ClientThread(Socket socket) {
+			this.socket = socket;
 		}
-
-		public void broadcast(Message message) {
-			for (ClientThread client : clients) {
-				try {
-					if (message.getRecipient() == -1 || message.getRecipient() == client.clientId) {
-						client.out.writeObject(message);
-					}
-				} catch (Exception e) {
-					System.err.println("Error sending to client " + client.clientId);
-				}
-			}
+		public void setGameSession(GameSession session) {
+			this.gameSession = session;
 		}
-
 		public void run() {
 			try {
 				out = new ObjectOutputStream(socket.getOutputStream());
 				in = new ObjectInputStream(socket.getInputStream());
-				socket.setTcpNoDelay(true);
-			} catch (Exception e) {
-				System.out.println("Streams not open");
-				return;
-			}
 
-			broadcast(new Message(MessageType.NEWUSER, "User " + clientId + " has joined!", clientId));
-
-			while (true) {
-				try {
-					Message message = (Message) in.readObject();
-					callback.accept(message);
-					broadcast(message);
-				} catch (Exception e) {
-					Message disconnectMessage = new Message(MessageType.DISCONNECT, "User " + clientId + " has disconnected!", clientId);
-					callback.accept(disconnectMessage);
-					broadcast(disconnectMessage);
-					clients.remove(this);
-					break;
+				Message loginMessage = (Message) in.readObject();
+				if (loginMessage.getType() != MessageType.LOGIN) {
+					send(new Message(MessageType.LOGIN_FAIL, "Invalid login message."));
+					return;
 				}
+
+				username = loginMessage.getContent().toString().trim();
+
+				synchronized (clients) {
+					if (username.isEmpty() || clients.containsKey(username)) {
+						send(new Message(MessageType.LOGIN_FAIL, "Username already taken or invalid."));
+						return;
+					}
+					clients.put(username, this);
+					count++;
+					send(new Message(MessageType.LOGIN_SUCCESS, username));
+					callback.accept(new Message(MessageType.NEWUSER, username));
+				}
+				synchronized (waitingClients) {
+					waitingClients.offer(this);
+					if (waitingClients.size() >= 2) {
+						ClientThread p1 = waitingClients.poll();
+						ClientThread p2 = waitingClients.poll();
+						GameSession session = new GameSession(p1, p2);
+						activeGames.add(session);
+						p1.setGameSession(session);
+						p2.setGameSession(session);
+						session.sendToBoth(new Message(MessageType.GAME_START, "Game started!"));
+					} else {
+						send(new Message(MessageType.GAME_START, "Waiting for an opponent..."));
+					}
+				}
+
+
+				while (true) {
+					Message message = (Message) in.readObject();
+					if (message.getType() == MessageType.MOVE || message.getType() == MessageType.CHAT) {
+						if (gameSession != null) {
+							gameSession.sendToOpponent(this, message);
+						}
+					}
+
+				}
+			} catch (Exception e) {
+				disconnect();
+			}
+		}
+
+		public void send(Message msg) {
+			try {
+				out.writeObject(msg);
+			} catch (Exception e) {
+				disconnect();
+			}
+		}
+
+		public void disconnect() {
+			try {
+				if (username != null) {
+					clients.remove(username);
+					count--;
+					callback.accept(new Message(MessageType.DISCONNECT, username + " disconnected"));
+					broadcast(new Message(MessageType.DISCONNECT, username + " disconnected. Total clients: " + count));
+				}
+				socket.close();
+			} catch (Exception e) {}
+		}
+
+		public void broadcast(Message message) {
+			for (ClientThread client : clients.values()) {
+				client.send(message);
 			}
 		}
 	}
+
+	private class GameSession {
+		private final ClientThread player1;
+		private final ClientThread player2;
+
+		public GameSession(ClientThread p1, ClientThread p2) {
+			this.player1 = p1;
+			this.player2 = p2;
+		}
+
+		public void sendToBoth(Message message) {
+			player1.send(message);
+			player2.send(message);
+		}
+
+		public void sendToOpponent(ClientThread sender, Message message) {
+			if (sender == player1) {
+				player2.send(message);
+			} else {
+				player1.send(message);
+			}
+		}
+
+		public boolean contains(ClientThread player) {
+			return player == player1 || player == player2;
+		}
+	}
+
 }
