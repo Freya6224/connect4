@@ -100,12 +100,13 @@ public class GuiClient extends Application {
 			for (int col = 0; col < 7; col++) {
 				Button btn = new Button();
 				btn.setMinSize(60, 60);
-				int r = row, c = col;
-				btn.setOnAction(e -> client.sendMove(r, c));
-				grid.add(btn, c, row);
+				int c = col;
+				btn.setOnAction(e -> handleMove(c));
+				grid.add(btn, col, row);
 				buttons[row][col] = btn;
 			}
 		}
+
 
 		chatArea = new TextArea();
 		chatArea.setEditable(false);
@@ -125,12 +126,21 @@ public class GuiClient extends Application {
 
 		gameScene = new Scene(root, 800, 500);
 	}
+	private void handleMove(int col) {
+		for (int row = 5; row >= 0; row--) {
+			String style = buttons[row][col].getStyle();
+			if (style == null || style.isEmpty()) {
+				client.sendMove(row, col);
+				break;
+			}
+		}
+	}
+
 
 	private void handleMessage(Serializable msg) {
 		if (msg instanceof Message message) {
 			switch (message.getType()) {
 				case LOGIN_SUCCESS -> Platform.runLater(() -> {
-					statusLabel.setText("Login successful. Waiting for opponent...");
 				});
 				case CHAT -> Platform.runLater(() ->
 						chatArea.appendText(message.getContent().toString() + "\n")
@@ -140,6 +150,7 @@ public class GuiClient extends Application {
 					int row = move[0], col = move[1], player = move[2];
 					buttons[row][col].setStyle("-fx-background-color: " + (player == 1 ? "red" : "yellow"));
 				});
+
 				case GAME_START -> Platform.runLater(() -> {
 					setupGameScene();
 					primaryStage.setScene(gameScene);

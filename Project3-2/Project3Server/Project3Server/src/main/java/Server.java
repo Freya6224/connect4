@@ -86,7 +86,7 @@ public class Server {
 						p2.setGameSession(session);
 						session.sendToBoth(new Message(MessageType.GAME_START, "Game started!"));
 					} else {
-						send(new Message(MessageType.GAME_START, "Waiting for an opponent..."));
+						send(new Message(MessageType.LOGIN_SUCCESS, "Waiting for an opponent..."));
 					}
 				}
 
@@ -147,11 +147,21 @@ public class Server {
 		}
 
 		public void sendToOpponent(ClientThread sender, Message message) {
-			if (sender == player1) {
-				player2.send(message);
+			int playerNumber = (sender == player1) ? 1 : 2;
+
+			if (message.getType() == MessageType.MOVE) {
+				int[] move = (int[]) message.getContent();
+				int[] moveWithPlayer = new int[]{move[0], move[1], playerNumber};
+				Message newMsg = new Message(MessageType.MOVE, moveWithPlayer);
+				getOpponent(sender).send(newMsg);
+				sender.send(newMsg);
 			} else {
-				player1.send(message);
+				getOpponent(sender).send(message);
 			}
+		}
+
+		public ClientThread getOpponent(ClientThread player) {
+			return (player == player1) ? player2 : player1;
 		}
 
 		public boolean contains(ClientThread player) {
