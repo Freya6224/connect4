@@ -12,12 +12,17 @@ import javafx.scene.control.ListView;
 
 public class Server {
 	private final Map<String, ClientThread> clients = new HashMap<>();
+	private final Map<ClientThread, Boolean> restartVotes = new HashMap<>();
+
+
 	private final Consumer<Message> callback;
 	private final Queue<ClientThread> waitingClients = new LinkedList<>();
 	private final List<GameSession> activeGames = new ArrayList<>();
 	private int currentPlayerTurn = 1;
 
-	private int count = 0;
+	private int count = -1;
+
+
 
 	public Server(Consumer<Message> callback) {
 		this.callback = callback;
@@ -53,6 +58,7 @@ public class Server {
 		public void setGameSession(GameSession session) {
 			this.gameSession = session;
 		}
+
 		public void run() {
 			try {
 				out = new ObjectOutputStream(socket.getOutputStream());
@@ -74,7 +80,7 @@ public class Server {
 					clients.put(username, this);
 					count++;
 					send(new Message(MessageType.LOGIN_SUCCESS, username));
-					callback.accept(new Message(MessageType.NEWUSER, username));
+					callback.accept(new Message(MessageType.NEWUSER, username,count));
 				}
 				synchronized (waitingClients) {
 					waitingClients.offer(this);
@@ -94,7 +100,7 @@ public class Server {
 
 				while (true) {
 					Message message = (Message) in.readObject();
-					if (message.getType() == MessageType.MOVE || message.getType() == MessageType.CHAT) {
+					if (message.getType() == MessageType.MOVE || message.getType() == MessageType.CHAT || message.getType() == MessageType.RESTART) {
 						if (gameSession != null) {
 							gameSession.sendToOpponent(this, message);
 						}
@@ -119,8 +125,7 @@ public class Server {
 				if (username != null) {
 					clients.remove(username);
 					count--;
-					callback.accept(new Message(MessageType.DISCONNECT, username + " disconnected"));
-					broadcast(new Message(MessageType.DISCONNECT, username + " disconnected. Total clients: " + count));
+					callback.accept(new Message(MessageType.DISCONNECT, username + " disconnected",count));
 				}
 				socket.close();
 			} catch (Exception e) {}
@@ -137,12 +142,24 @@ public class Server {
 		private final int[][] board = new int[6][7];
 		private final ClientThread player1;
 		private final ClientThread player2;
+		private boolean player1WantsRestart = false;
+		private boolean player2WantsRestart = false;
+
 
 		public GameSession(ClientThread p1, ClientThread p2) {
 			this.player1 = p1;
 			this.player2 = p2;
+			restartVotes.put(p1, false);
+			restartVotes.put(p2, false);
 		}
-
+		public void resetBoard() {
+			for (int row = 0; row < 6; row++) {
+				for (int col = 0; col < 7; col++) {
+					board[row][col] = 0;
+				}
+			}
+			currentPlayerTurn = 1;
+		}
 		public void sendToBoth(Message message) {
 			player1.send(message);
 			player2.send(message);
@@ -166,7 +183,7 @@ public class Server {
 
 					int[] move = (int[]) message.getContent();
 					int row = move[0], col = move[1];
-					if (board[row][col] != 0) return; // already taken
+					if (board[row][col] != 0) return;
 					board[row][col] = playerNumber;
 
 					int[] moveWithPlayer = new int[]{row, col, playerNumber};
@@ -174,8 +191,13 @@ public class Server {
 					player2.send(new Message(MessageType.MOVE, moveWithPlayer));
 
 					if (checkWin(row, col, playerNumber)) {
-						String winnerMsg = "Player " + playerNumber + " (" + sender.username + ") wins!";
+						String winnerMsg =  sender.username + ": wins!";
 						sendToBoth(new Message(MessageType.GAME_END, winnerMsg));
+						callback.accept(new Message(MessageType.CHAT, winnerMsg,count));
+					} else if (checkDraw()) {
+						sendToBoth(new Message(MessageType.GAME_END, "Its a Tie!"));
+						callback.accept(new Message(MessageType.CHAT, "Its a Tie!",count));
+
 					} else {
 						currentPlayerTurn = (currentPlayerTurn == 1) ? 2 : 1;
 					}
@@ -183,26 +205,51 @@ public class Server {
 
 			}
 			else if (message.getType() == MessageType.CHAT) {
+				callback.accept(new Message(MessageType.CHAT, "Chat message from " + sender.username,count));
 				Message newMsg = new Message(MessageType.CHAT, sender.username + ": "+ message.getContent());
 				player1.send(newMsg);
 				player2.send(newMsg);
+			}
+			else if (message.getType() == MessageType.RESTART) {
+				if (sender == player1) {
+					player1WantsRestart = true;
+				} else if (sender == player2) {
+					player2WantsRestart = true;
+				}
+
+				if (player1WantsRestart && player2WantsRestart) {
+					resetBoard();
+					sendToBoth(new Message(MessageType.GAME_START, "Game restarted!"));
+					player1WantsRestart = false;
+					player2WantsRestart = false;
+				} else {
+					sender.send(new Message(MessageType.CHAT, "Waiting for your opponent to restart..."));
+				}
 			}
 			else {
 				getOpponent(sender).send(message);
 			}
 		}
 
-	private boolean checkWin(int row, int col, int player) {
-		int[][] directions = {{1,0},{0,1},{1,1},{1,-1}};
-		for (int[] d : directions) {
-			int count = 1;
-			count += countDirection(row, col, d[0], d[1], player);
-			count += countDirection(row, col, -d[0], -d[1], player);
-			if (count >= 4) return true;
+		private boolean checkWin(int row, int col, int player) {
+			int[][] directions = {{1,0},{0,1},{1,1},{1,-1}};
+			for (int[] d : directions) {
+				int count = 1;
+				count += countDirection(row, col, d[0], d[1], player);
+				count += countDirection(row, col, -d[0], -d[1], player);
+				if (count >= 4) return true;
+			}
+			return false;
 		}
-		return false;
-	}
-
+		private boolean checkDraw() {
+			for (int i = 0; i < board.length; i++) {
+				for (int j = 0; j < board[0].length; j++) {
+					if (board[i][j] == 0)
+						return false;
+				}
+			}
+			return true;
+		}
 	private int countDirection(int row, int col, int dRow, int dCol, int player) {
 		int r = row + dRow, c = col + dCol, count = 0;
 		while (r >= 0 && r < 6 && c >= 0 && c < 7 && board[r][c] == player) {
@@ -220,6 +267,8 @@ public class Server {
 		public boolean contains(ClientThread player) {
 			return player == player1 || player == player2;
 		}
+
+
 	}
 
 }

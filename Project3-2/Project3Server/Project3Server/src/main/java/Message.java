@@ -5,6 +5,7 @@ public class Message implements Serializable {
 
     private MessageType type;
     private Serializable content;
+    private int row, col;
     private int recipient;
 
     public Message(MessageType type, Serializable content) {
@@ -19,7 +20,10 @@ public class Message implements Serializable {
         this.recipient = recipient;
     }
 
+
     public MessageType getType() { return type; }
     public Serializable getContent() { return content; }
     public int getRecipient() { return recipient; }
+
+
 }

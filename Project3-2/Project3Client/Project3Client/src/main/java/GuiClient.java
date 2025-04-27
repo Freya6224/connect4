@@ -125,6 +125,16 @@ public class GuiClient extends Application {
 		root.setRight(chatBox);
 		root.setBottom(statusLabel);
 
+		Image backgroundImage = new Image("ocean3.png");
+		BackgroundImage bgImage = new BackgroundImage(
+				backgroundImage,
+				BackgroundRepeat.NO_REPEAT,
+				BackgroundRepeat.NO_REPEAT,
+				BackgroundPosition.CENTER,
+				new BackgroundSize(BackgroundSize.AUTO, BackgroundSize.AUTO, false, false, true, true)
+		);
+
+		root.setBackground(new Background(bgImage));
 		gameScene = new Scene(root, 800, 500);
 	}
 	private void handleMove(int col) {
@@ -149,7 +159,9 @@ public class GuiClient extends Application {
 				case MOVE -> Platform.runLater(() -> {
 					int[] move = (int[]) message.getContent();
 					int row = move[0], col = move[1], player = move[2];
-					buttons[row][col].setStyle("-fx-background-color: " + (player == 1 ? "red" : "yellow"));
+					String fishImage = (player == 1) ? "redfish.png" : "yellowFish.png";
+					buttons[row][col].setStyle("-fx-background-image: url('file:src/main/resources/" + fishImage + "'); " +
+							"-fx-background-size: cover;");
 				});
 
 				case GAME_START -> Platform.runLater(() -> {
@@ -195,9 +207,7 @@ public class GuiClient extends Application {
 		Button quitButton = new Button("Quit");
 
 		restartButton.setOnAction(e -> {
-			clearBoard();
-			primaryStage.setScene(gameScene);
-			statusLabel.setText("New game started! Waiting for moves...");
+			client.send(new Message(MessageType.RESTART, null));
 		});
 
 		quitButton.setOnAction(e -> {

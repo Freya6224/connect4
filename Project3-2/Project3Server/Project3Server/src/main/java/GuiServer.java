@@ -26,9 +26,11 @@ public class GuiServer extends Application {
 		serverConnection = new Server(data -> Platform.runLater(() -> {
 			String user = String.valueOf(data.getContent());
 			switch (data.getType()) {
-				case CHAT, MOVE, GAME_START, GAME_END, LOGIN_FAIL, LOGIN_SUCCESS, ERROR:
+				case CHAT, GAME_START, GAME_END, LOGIN_FAIL, LOGIN_SUCCESS, ERROR:
 					listItems.getItems().add(data.getContent().toString());
 					break;
+				case MOVE:
+					listItems.getItems().add(data.getContent().toString());
 				case NEWUSER:
 
 					listUsers.getItems().add(String.valueOf(data.getRecipient()+1));
