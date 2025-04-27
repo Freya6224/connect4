@@ -15,6 +15,7 @@ public class Server {
 	private final Consumer<Message> callback;
 	private final Queue<ClientThread> waitingClients = new LinkedList<>();
 	private final List<GameSession> activeGames = new ArrayList<>();
+	private int currentPlayerTurn = 1;
 
 	private int count = 0;
 
@@ -133,6 +134,7 @@ public class Server {
 	}
 
 	private class GameSession {
+		private final int[][] board = new int[6][7];
 		private final ClientThread player1;
 		private final ClientThread player2;
 
@@ -147,18 +149,69 @@ public class Server {
 		}
 
 		public void sendToOpponent(ClientThread sender, Message message) {
-			int playerNumber = (sender == player1) ? 1 : 2;
-
 			if (message.getType() == MessageType.MOVE) {
-				int[] move = (int[]) message.getContent();
-				int[] moveWithPlayer = new int[]{move[0], move[1], playerNumber};
-				Message newMsg = new Message(MessageType.MOVE, moveWithPlayer);
-				getOpponent(sender).send(newMsg);
-				sender.send(newMsg);
-			} else {
+				int playerNumber = (sender == player1) ? 1 : 2;
+
+				if (playerNumber != currentPlayerTurn) {
+					sender.send(new Message(MessageType.ERROR, "It's not your turn!"));
+					return;
+				}
+
+				if (message.getType() == MessageType.MOVE) {
+					 playerNumber = (sender == player1) ? 1 : 2;
+					if (playerNumber != currentPlayerTurn) {
+						sender.send(new Message(MessageType.ERROR, "It's not your turn!"));
+						return;
+					}
+
+					int[] move = (int[]) message.getContent();
+					int row = move[0], col = move[1];
+					if (board[row][col] != 0) return; // already taken
+					board[row][col] = playerNumber;
+
+					int[] moveWithPlayer = new int[]{row, col, playerNumber};
+					player1.send(new Message(MessageType.MOVE, moveWithPlayer));
+					player2.send(new Message(MessageType.MOVE, moveWithPlayer));
+
+					if (checkWin(row, col, playerNumber)) {
+						String winnerMsg = "Player " + playerNumber + " (" + sender.username + ") wins!";
+						sendToBoth(new Message(MessageType.GAME_END, winnerMsg));
+					} else {
+						currentPlayerTurn = (currentPlayerTurn == 1) ? 2 : 1;
+					}
+				}
+
+			}
+			else if (message.getType() == MessageType.CHAT) {
+				Message newMsg = new Message(MessageType.CHAT, sender.username + ": "+ message.getContent());
+				player1.send(newMsg);
+				player2.send(newMsg);
+			}
+			else {
 				getOpponent(sender).send(message);
 			}
 		}
+
+	private boolean checkWin(int row, int col, int player) {
+		int[][] directions = {{1,0},{0,1},{1,1},{1,-1}};
+		for (int[] d : directions) {
+			int count = 1;
+			count += countDirection(row, col, d[0], d[1], player);
+			count += countDirection(row, col, -d[0], -d[1], player);
+			if (count >= 4) return true;
+		}
+		return false;
+	}
+
+	private int countDirection(int row, int col, int dRow, int dCol, int player) {
+		int r = row + dRow, c = col + dCol, count = 0;
+		while (r >= 0 && r < 6 && c >= 0 && c < 7 && board[r][c] == player) {
+			count++;
+			r += dRow;
+			c += dCol;
+		}
+		return count;
+	}
 
 		public ClientThread getOpponent(ClientThread player) {
 			return (player == player1) ? player2 : player1;

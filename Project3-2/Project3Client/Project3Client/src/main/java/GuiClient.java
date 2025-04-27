@@ -43,9 +43,11 @@ public class GuiClient extends Application {
 	private Button[][] buttons = new Button[6][7];
 
 	private Scene loginScene, gameScene, resultScene;
-	private TextField usernameField, serverIpField, portField, chatInput;
+	private TextField usernameField, portField, chatInput;
 	private TextArea chatArea;
 	private Label statusLabel;
+	private int wins, losses, ties = 0;
+
 
 	public static void main(String[] args) {
 		launch(args);
@@ -81,7 +83,6 @@ public class GuiClient extends Application {
 				loginStatus.setText("Failed to connect: " + ex.getMessage());
 			}
 		});
-
 
 		layout.getChildren().addAll(
 				new Label("Connect 4 Login"), usernameField, loginButton, loginStatus
@@ -157,7 +158,24 @@ public class GuiClient extends Application {
 					primaryStage.setTitle("Connect 4 Game");
 					statusLabel.setText(message.getContent().toString());
 				});
-				case GAME_END -> Platform.runLater(() -> statusLabel.setText(message.getContent().toString()));
+				case GAME_END -> Platform.runLater(() -> {
+					String resultMessage = message.getContent().toString();
+
+					if (resultMessage.contains("wins")) {
+						if (resultMessage.contains(username)) {
+							wins++;
+						} else {
+							losses++;
+						}
+					} else if (resultMessage.contains("Tie") || resultMessage.contains("tie")) {
+						ties++;
+					}
+
+					statusLabel.setText(resultMessage);
+					resultScreen(resultMessage);
+				});
+
+
 				case LOGIN_FAIL, ERROR -> Platform.runLater(() -> {
 					Alert alert = new Alert(Alert.AlertType.ERROR, message.getContent().toString());
 					alert.showAndWait();
@@ -165,4 +183,40 @@ public class GuiClient extends Application {
 			}
 		}
 	}
+
+	private void resultScreen(String message) {
+		VBox layout = new VBox(20);
+		layout.setAlignment(Pos.CENTER);
+
+		Label resultLabel = new Label(message);
+		Label statsLabel = new Label("Wins: " + wins + "\n Losses: " + losses + "\n Ties: " + ties);
+
+		Button restartButton = new Button("Restart");
+		Button quitButton = new Button("Quit");
+
+		restartButton.setOnAction(e -> {
+			clearBoard();
+			primaryStage.setScene(gameScene);
+			statusLabel.setText("New game started! Waiting for moves...");
+		});
+
+		quitButton.setOnAction(e -> {
+			client.disconnect();
+			Platform.exit();
+		});
+
+		layout.getChildren().addAll(resultLabel, statsLabel, restartButton, quitButton);
+		resultScene = new Scene(layout, 800, 500);
+		primaryStage.setScene(resultScene);
+	}
+	private void clearBoard() {
+		for (int row = 0; row < 6; row++) {
+			for (int col = 0; col < 7; col++) {
+				buttons[row][col].setStyle("");
+			}
+		}
+		chatArea.clear();
+	}
+
+
 }
